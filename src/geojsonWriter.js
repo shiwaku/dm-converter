@@ -23,15 +23,11 @@ class GeoJSONWriter {
   // epsgCode: 入力データの座標参照系（EPSG整数コード）
   // opts.fragment: FeatureCollection の外枠を書かず、Feature の並びだけを出力する。
   //   並列処理でワーカーごとの断片を作り、あとで連結するために使う。
+  //   ファイルごとに系が違う場合は、書き込む前に setSourceEpsg で切り替える。
   constructor(outFile, epsgCode, opts = {}) {
     this._fragment = opts.fragment === true;
-    const def = EPSG_DEFS[epsgCode];
-    if (!def) {
-      const keys = Object.keys(EPSG_DEFS).join(', ');
-      throw new Error(`未対応のEPSGコードです: ${epsgCode}\n対応コード: ${keys}`);
-    }
-    proj4.defs(`EPSG:${epsgCode}`, def);
-    this._transform = proj4(`EPSG:${epsgCode}`, 'EPSG:4326').forward;
+    this._transforms = new Map();
+    this.setSourceEpsg(epsgCode);
 
     this._fd = fs.openSync(outFile, 'w');
     this.geometry = null;
@@ -39,6 +35,20 @@ class GeoJSONWriter {
     this._started = false;
     this._closed = false;
     this._buf = '';
+  }
+
+  // 入力の座標参照系を切り替える（出力は常に EPSG:4326）
+  setSourceEpsg(epsgCode) {
+    if (!this._transforms.has(epsgCode)) {
+      const def = EPSG_DEFS[epsgCode];
+      if (!def) {
+        const keys = Object.keys(EPSG_DEFS).join(', ');
+        throw new Error(`未対応のEPSGコードです: ${epsgCode}\n対応コード: ${keys}`);
+      }
+      proj4.defs(`EPSG:${epsgCode}`, def);
+      this._transforms.set(epsgCode, proj4(`EPSG:${epsgCode}`, 'EPSG:4326').forward);
+    }
+    this._transform = this._transforms.get(epsgCode);
   }
 
   _write(str) {

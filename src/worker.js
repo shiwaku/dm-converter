@@ -8,15 +8,15 @@ const { parentPort, workerData } = require('worker_threads');
 const GeoJSONWriter = require('./geojsonWriter');
 const { KINDS, convertFiles } = require('./convert');
 
-const { files, epsg, tmpDir, index } = workerData;
+const { files, epsgByFile, tmpDir, index } = workerData;
 
 const writers = {};
 for (const kind of KINDS) {
-  writers[kind] = new GeoJSONWriter(path.join(tmpDir, `${kind}.${index}.part`), epsg, { fragment: true });
+  writers[kind] = new GeoJSONWriter(path.join(tmpDir, `${kind}.${index}.part`), epsgByFile[files[0]], { fragment: true });
 }
 
 try {
-  convertFiles(files, writers, (f) => parentPort.postMessage({ type: 'file', file: f }));
+  convertFiles(files, writers, (f) => parentPort.postMessage({ type: 'file', file: f }), epsgByFile);
 } finally {
   for (const kind of KINDS) writers[kind].close();
 }

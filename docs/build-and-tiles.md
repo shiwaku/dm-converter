@@ -24,7 +24,7 @@ bash scripts/build.sh 2500 10000 25000
 
 | 変数 | 効果 |
 |---|---|
-| `EPSG=6675` | 入力データの座標参照系を指定 |
+| `EPSG=6675` | 入力データの座標参照系を指定（既定は自動判定） |
 | `SKIP_CONVERT=1` | DM→GeoJSON を飛ばし、既存のGeoJSONから後段だけ作り直す |
 | `SKIP_PARQUET=1` | GeoParquet を作らない |
 | `SKIP_TILES=1` | MBTiles / PMTiles を作らない |
@@ -57,7 +57,7 @@ input/
 
 **2. 一括ビルドを実行する**
 
-静岡県は平面直角座標系第VIII系なので、`--epsg` / `EPSG` の指定は不要です（既定値が 6676）。
+座標系は DM ファイルから自動で判定するので、通常は `--epsg` / `EPSG` の指定は不要です。判定できないデータや旧日本測地系のデータのときだけ指定します。
 
 ```bash
 npm run build            # 1/2,500 と 1/10,000 を一括（scripts/build.sh 2500 10000）

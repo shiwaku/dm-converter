@@ -11,7 +11,7 @@
 #   scripts/build.sh 2500 10000 25000
 #
 # 環境変数:
-#   EPSG=6676        入力データの座標参照系（既定: src/index.js の既定値）
+#   EPSG=6676        入力データの座標参照系（既定: DM ファイルから自動判定）
 #   SKIP_CONVERT=1   DM→GeoJSON を飛ばし、既存の GeoJSON から後段だけ作り直す
 #   SKIP_PARQUET=1   GeoParquet を作らない
 #   SKIP_TILES=1     MBTiles / PMTiles を作らない
