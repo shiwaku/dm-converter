@@ -5,6 +5,7 @@
 const fs = require('fs');
 const proj4 = require('proj4');
 const EPSG_DEFS = require('./epsgDefs');
+const { signedArea } = require('./rings');
 
 proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
 
@@ -66,8 +67,13 @@ class GeoJSONWriter {
   }
 
   // ジオメトリの設定
-  setGeometry(figtype, xyList) {
+  // holes: ポリゴン（figtype 2）の内側の輪。中庭線を穴として持たせるときに渡す。
+  setGeometry(figtype, xyList, holes = []) {
     const tr = this._transform;
+    const ring = (list) => list.map(xy => {
+      const [lon, lat] = tr([xy[0], xy[1]]);
+      return `[${fmt(lon)},${fmt(lat)}]`;
+    }).join(',');
     if (figtype === 1) {
       // 折れ線
       let g = '\t{"type":"Feature",\n';
@@ -85,11 +91,17 @@ class GeoJSONWriter {
       XyList.push([...XyList[0]]);
       let g = '\t{"type":"Feature",\n';
       g += '\t"geometry":{"type":"Polygon","coordinates":[[';
-      g += XyList.map(xy => {
-        const [lon, lat] = tr([xy[0], xy[1]]);
-        return `[${fmt(lon)},${fmt(lat)}]`;
-      }).join(',');
-      g += ']]';
+      g += ring(XyList);
+      g += ']';
+      // 穴は外周と逆回りにする（RFC 7946 の右手則に揃える向きの関係）
+      const outerCcw = signedArea(XyList) > 0;
+      for (const hole of holes) {
+        const h = (signedArea(hole) > 0) === outerCcw ? [...hole].reverse() : [...hole];
+        const first = h[0], last = h[h.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) h.push([...first]);
+        g += `,[${ring(h)}]`;
+      }
+      g += ']';
       this.geometry = g;
 
     } else if (figtype === 4 || figtype === 5) {

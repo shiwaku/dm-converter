@@ -10,6 +10,22 @@ const DATATYPE_MAP = {
   'E5': '点', 'E6': '方向', 'E7': '注記', 'E8': '属性'
 };
 
+// 図郭レコード(b)の「座標値の単位」→ メートルへの除数。
+// 1: mm、10: cm、999: m。空欄や想定外の値は従来どおり cm とみなして警告する。
+const UNIT_DIVISORS = { 1: 1000, 10: 100, 999: 1 };
+const warnedUnits = new Set();
+
+function unitDivisor(raw, file) {
+  const code = parseInt(raw);
+  if (UNIT_DIVISORS[code] !== undefined) return UNIT_DIVISORS[code];
+  const key = `${file}:${raw}`;
+  if (!warnedUnits.has(key)) {
+    warnedUnits.add(key);
+    console.warn(`座標値の単位が不明です（"${raw.trim()}"）。cm として扱います: ${file}`);
+  }
+  return 100;
+}
+
 class DM {
   constructor(inDMFile) {
     this._DMFile = inDMFile;
@@ -44,6 +60,7 @@ class DM {
     let recno = 0;
     let unitcode = '';
     let ldx = 0, ldy = 0;
+    let unitDiv = 100;   // 座標値の単位（既定は cm）
 
     while (recno < lines.length) {
       const record = lines[recno];
@@ -59,6 +76,7 @@ class DM {
         if (!recB) break;   // 途中で終端しているファイル
         ldx = parseFloat(decode(recB, 0, 7));
         ldy = parseFloat(decode(recB, 7, 14));
+        unitDiv = unitDivisor(decode(recB, 44, 47), this._DMFile);
         // 図郭レコード(d)までシーク
         recno += 2;
         let cnt = 0;
@@ -75,6 +93,8 @@ class DM {
         const elementno = parseInt(decode(record, 12, 16));
         const recordcnt = parseInt(decode(record, 31, 35));
         const datakind = decode(record, 20, 21);
+        // 図形区分。建物（3001〜3004）では 31 が中庭線（面の内側の輪）を表す。
+        const zukei = decode(record, 18, 20).trim();
         const datacnt = parseInt(decode(record, 27, 31));
         let curRectype = rectype;
         let datatype = DATATYPE_MAP[rectype] || '';
@@ -93,9 +113,9 @@ class DM {
               if (!rec) { truncated = true; break; }
             }
             const s = (pointcnt * 14) % 84;
-            // 代表点座標（センチメートルからメートルに変換）
-            const xVal = parseFloat(decode(rec, s, s + 7)) / 100;
-            const yVal = parseFloat(decode(rec, s + 7, s + 14)) / 100;
+            // 座標値の単位からメートルに変換
+            const xVal = parseFloat(decode(rec, s, s + 7)) / unitDiv;
+            const yVal = parseFloat(decode(rec, s + 7, s + 14)) / unitDiv;
             xy.push([ldy + yVal, ldx + xVal]);
             pointcnt++;
           }
@@ -109,6 +129,7 @@ class DM {
             FIGTYPE: curRectype,
             LAYER: layercode,
             ELNO: elno,
+            ZUKEI: zukei,
             XYList: xy,
             RECORD_TYPE: curRectype,
             DATA_KIND: datakind,
@@ -119,9 +140,9 @@ class DM {
 
         } else if (curRectype === 'E5') {
           // 点（E5）
-          // 代表点座標（センチメートルからメートルに変換）
-          const px = parseFloat(decode(record, 35, 42)) / 100;
-          const py = parseFloat(decode(record, 42, 49)) / 100;
+          // 座標値の単位からメートルに変換
+          const px = parseFloat(decode(record, 35, 42)) / unitDiv;
+          const py = parseFloat(decode(record, 42, 49)) / unitDiv;
           this._elementDict[dictSeqno] = {
             FIGTYPE: curRectype,
             LAYER: layercode,
@@ -156,10 +177,10 @@ class DM {
             const rec = lines[recno + 1 + Math.floor(i / perRecord)];
             if (!rec) { truncated = true; break; }
             const s = (i % perRecord) * stride;
-            // 代表点座標（センチメートルからメートルに変換）
+            // 座標値の単位からメートルに変換
             pts.push([
-              parseFloat(decode(rec, s, s + 7)) / 100,
-              parseFloat(decode(rec, s + 7, s + 14)) / 100
+              parseFloat(decode(rec, s, s + 7)) / unitDiv,
+              parseFloat(decode(rec, s + 7, s + 14)) / unitDiv
             ]);
           }
           if (truncated) break;
@@ -187,14 +208,25 @@ class DM {
 
         } else if (curRectype === 'E7') {
           // 注記（E7）
-          // 代表点座標（センチメートルからメートルに変換）
-          const px = parseFloat(decode(record, 35, 42)) / 100;
-          const py = parseFloat(decode(record, 42, 49)) / 100;
+          // 座標値の単位からメートルに変換
+          const px = parseFloat(decode(record, 35, 42)) / unitDiv;
+          const py = parseFloat(decode(record, 42, 49)) / unitDiv;
           const rec2 = lines[recno + 1];
           if (!rec2) break;
           const vnflag = decode(rec2, 0, 1);
           const angle = parseInt(decode(rec2, 1, 8));
-          const text = decode(rec2, 20, 84).trimEnd();
+          // 注記データは後続レコードの21〜84バイト目。32文字を超える注記は
+          // 複数レコードにまたがるので、レコード数ぶんを連結する。全角文字が
+          // レコード境界で割れても崩れないよう、バイト列のまま連結してから復号する。
+          const parts = [];
+          for (let i = 1; i <= Math.max(recordcnt, 1); i++) {
+            const r = lines[recno + i];
+            if (!r) break;
+            let end = Math.min(r.length, 84);
+            while (end > 20 && (r[end - 1] === 0x0a || r[end - 1] === 0x0d)) end--;
+            if (end > 20) parts.push(r.slice(20, end));
+          }
+          const text = iconv.decode(Buffer.concat(parts), 'cp932').trimEnd();
           this._elementDict[dictSeqno] = {
             FIGTYPE: curRectype,
             LAYER: layercode,

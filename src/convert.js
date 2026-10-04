@@ -3,6 +3,7 @@
 // 逐次実行（index.js）とワーカー（worker.js）の両方から使う。
 // -----------------------------------------
 const DM = require('./dm');
+const { assignHoles } = require('./rings');
 
 /** 出力種別。Writer の並び順とファイル名サフィックスの対応。 */
 const KINDS = ['線', '面', '記号', '方向', '注記'];
@@ -15,9 +16,12 @@ const KINDS = ['線', '面', '記号', '方向', '注記'];
 function convertFiles(files, writers, onFile) {
   for (const dmfile of files) {
     if (onFile) onFile(dmfile);
-    const dats = new DM(dmfile);
+    const dats = [...new DM(dmfile)];
+    // 中庭線は図郭単位で外周の面に割り当てる（rings.js）
+    const { holes, consumed } = assignHoles(dats);
 
     for (const dat of dats) {
+      if (consumed.has(dat)) continue;
       const fig = dat.FIGTYPE || '';
 
       if (fig === 'E2') {
@@ -32,7 +36,7 @@ function convertFiles(files, writers, onFile) {
 
       } else if (fig === 'E1') {
         const w = writers['面'];
-        w.setGeometry(2, dat.XYList);
+        w.setGeometry(2, dat.XYList, holes.get(dat));
         w.setPropertie('Code', dat.LAYER || '');
         w.setPropertie('Elno', dat.ELNO || '');
         w.setPropertie('RecordType', dat.RECORD_TYPE || '');
