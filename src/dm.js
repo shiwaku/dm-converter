@@ -4,6 +4,7 @@
 // -----------------------------------------
 const fs = require('fs');
 const iconv = require('iconv-lite');
+const { circleRing, arcLine } = require('./arcs');
 
 const DATATYPE_MAP = {
   'E1': '面', 'E2': '線', 'E3': '円', 'E4': '円弧',
@@ -137,6 +138,42 @@ class DM {
           };
           dictSeqno++;
           recno++;
+
+        } else if (curRectype === 'E3' || curRectype === 'E4') {
+          // 円（E3）は円周上の3点、円弧（E4）は始点・中間点・終点の3点。
+          // 3点を通る円を求めて折れ線に近似し、円は面、円弧は線として出力する。
+          // 読み出しは E6 と同じく、ヘッダ位置からの相対で求めて recno は動かさない。
+          const stride = (datakind === '3' || datakind === '6') ? 21 : 14;
+          const perRecord = Math.floor(84 / stride);
+          const pts = [];
+          let truncated = false;
+          for (let i = 0; i < Math.min(datacnt, 3); i++) {
+            const rec = lines[recno + 1 + Math.floor(i / perRecord)];
+            if (!rec) { truncated = true; break; }
+            const s = (i % perRecord) * stride;
+            // 座標値の単位からメートルに変換
+            const xVal = parseFloat(decode(rec, s, s + 7)) / unitDiv;
+            const yVal = parseFloat(decode(rec, s + 7, s + 14)) / unitDiv;
+            pts.push([ldy + yVal, ldx + xVal]);
+          }
+          if (truncated) break;
+          const xy = pts.length < 3 ? null
+            : curRectype === 'E3' ? circleRing(...pts) : arcLine(...pts);
+          if (xy === null) {
+            console.warn(`${DATATYPE_MAP[curRectype]}を作れないため読み飛ばします（3点が一直線上にある等）: ${elno}`);
+          } else {
+            this._elementDict[dictSeqno] = {
+              FIGTYPE: curRectype,
+              LAYER: layercode,
+              ELNO: elno,
+              XYList: xy,
+              RECORD_TYPE: curRectype,
+              DATA_KIND: datakind,
+              DATA_TYPE: datatype
+            };
+            dictSeqno++;
+          }
+          recno += recordcnt + 1;
 
         } else if (curRectype === 'E5') {
           // 点（E5）

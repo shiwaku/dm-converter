@@ -12,10 +12,13 @@ const KINDS = ['線', '面', '記号', '方向', '注記'];
  * @param {string[]} files    .dm ファイルのパス
  * @param {object}   writers  { 線, 面, 記号, 方向, 注記 } の GeoJSONWriter
  * @param {function} onFile   1ファイル処理するたびに呼ばれる（進捗表示用）
+ * @param {object}   epsgByFile  { .dm のパス: 入力 EPSG }（crs.js の resolveEpsg で決める）
  */
-function convertFiles(files, writers, onFile) {
+function convertFiles(files, writers, onFile, epsgByFile) {
   for (const dmfile of files) {
     if (onFile) onFile(dmfile);
+    // 系はファイルごとに違いうる。出力は EPSG:4326 なので同じファイルにまとめてよい
+    for (const kind of KINDS) writers[kind].setSourceEpsg(epsgByFile[dmfile]);
     const dats = [...new DM(dmfile)];
     // 中庭線は図郭単位で外周の面に割り当てる（rings.js）
     const { holes, consumed } = assignHoles(dats);
@@ -24,7 +27,8 @@ function convertFiles(files, writers, onFile) {
       if (consumed.has(dat)) continue;
       const fig = dat.FIGTYPE || '';
 
-      if (fig === 'E2') {
+      // 円弧（E4）は線、円（E3）は面として出力する
+      if (fig === 'E2' || fig === 'E4') {
         const w = writers['線'];
         w.setGeometry(1, dat.XYList);
         w.setPropertie('Code', dat.LAYER || '');
@@ -34,7 +38,7 @@ function convertFiles(files, writers, onFile) {
         w.setPropertie('DataKind', dat.DATA_KIND || '');
         w.write();
 
-      } else if (fig === 'E1') {
+      } else if (fig === 'E1' || fig === 'E3') {
         const w = writers['面'];
         w.setGeometry(2, dat.XYList, holes.get(dat));
         w.setPropertie('Code', dat.LAYER || '');
