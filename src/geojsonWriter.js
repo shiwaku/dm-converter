@@ -96,9 +96,11 @@ class GeoJSONWriter {
       this.geometry = g;
 
     } else if (figtype === 2) {
-      // ポリゴン（Python の numpy.flipud + append と同等）
+      // ポリゴン。頂点列を反転し、閉じていなければ始点を足して閉じる。
+      // 始終点が一致する要素（面化した E2 や閉じた E1）に始点を足すと、終点が重複する。
       const XyList = [...xyList].reverse();
-      XyList.push([...XyList[0]]);
+      const head = XyList[0], tail = XyList[XyList.length - 1];
+      if (head[0] !== tail[0] || head[1] !== tail[1]) XyList.push([...head]);
       let g = '\t{"type":"Feature",\n';
       g += '\t"geometry":{"type":"Polygon","coordinates":[[';
       g += ring(XyList);
