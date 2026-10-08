@@ -1,0 +1,2 @@
+# シェルスクリプトは WSL・Linux の bash で実行するため、Windows で core.autocrlf=true でも LF で取り出す
+*.sh text eol=lf
