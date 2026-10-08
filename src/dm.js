@@ -121,8 +121,9 @@ class DM {
             pointcnt++;
           }
           if (truncated) break;
-          // 始終点が一致していれば面化する
-          if (xy[0][0] === xy[xy.length - 1][0] && xy[0][1] === xy[xy.length - 1][1]) {
+          // 始終点が一致していれば面化する。ただし A→B→A のような3点以下の往復線は
+          // 面積を持たない（GeoJSON の輪は4点以上が必要）ので線のまま残す
+          if (xy.length >= 4 && xy[0][0] === xy[xy.length - 1][0] && xy[0][1] === xy[xy.length - 1][1]) {
             curRectype = 'E1';
             datatype = DATATYPE_MAP['E1'];
           }
